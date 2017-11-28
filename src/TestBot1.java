@@ -1,4 +1,6 @@
 import java.util.ArrayList;
+import java.util.Deque;
+import java.util.List;
 
 import bwapi.*;
 import bwta.BWTA;
@@ -12,13 +14,12 @@ public class TestBot1 extends DefaultBWListener {
 
     private Player self;
     
-    private boolean needForPylon = false;
-    private boolean buildingPylon = false;
+    private ArrayList<UnitType> buildQueue;
     
     private int reservedMinerals = 0;
     private int reservedGas = 0;
     
-    private ArrayList<Unit> busyProbes;
+    private ArrayList<BuildOrder> buildOrders;
     
     public void run() {
         mirror.getModule().setEventListener(this);
@@ -29,10 +30,16 @@ public class TestBot1 extends DefaultBWListener {
     public void onUnitCreate(Unit unit) {
         System.out.println("New unit created: " + unit.getType());
         
-        if(unit.getType() == UnitType.Protoss_Pylon) {
-        	buildingPylon = false;
-        	reservedMinerals -= 100;
-        	game.sendText("buildingPylon = false! Reserved Minerals: "+ reservedMinerals);
+        if(unit.getType().isBuilding() && unit.getPlayer() == self) {
+        	reservedMinerals -= unit.getType().mineralPrice();
+        	reservedGas -= unit.getType().gasPrice();
+        	
+        	for(BuildOrder b : buildOrders) {
+        		if(b instanceof BuildOrderBuilding) {
+        			((BuildOrderBuilding) b).startedWarp(unit);
+        			break;
+        		}
+        	}
         }
     }
     
@@ -52,7 +59,8 @@ public class TestBot1 extends DefaultBWListener {
         BWTA.analyze();
         System.out.println("Map data ready");
         
-        busyProbes = new ArrayList<>();
+        buildQueue = new ArrayList<>();
+        buildOrders = new ArrayList<>();
         
         int i = 0;
         for(BaseLocation baseLocation : BWTA.getBaseLocations()){
@@ -62,20 +70,48 @@ public class TestBot1 extends DefaultBWListener {
         	}
         	System.out.println();
         }
-
     }
 
     @Override
     public void onFrame() {
-        game.drawTextScreen(10, 10, "Playing as " + self.getName() + " - " + self.getRace());
         
+        ArrayList<BuildOrder> toRemove = new ArrayList<>();
+        
+        for(BuildOrder b : buildOrders) {
+        	if(b.isDone()) {
+        		toRemove.add(b);
+        	}
+        }
+        
+        for(BuildOrder b : toRemove) {
+        	buildOrders.remove(b);
+        }
+        
+        for(BuildOrder b : buildOrders) {
+        	b.onFrame();
+        }
+        
+        StringBuilder sb = new StringBuilder("BuildOrders: \n");
+        for(BuildOrder b : buildOrders) {
+        	sb.append(b.toString()+"\n");
+        }
+        
+        StringBuilder sb2 = new StringBuilder("BuildQueue: \n");
+        for(UnitType uType : buildQueue) {
+        	sb2.append(uType.toString()+"\n");
+        }
+        
+        game.drawTextScreen(150, 10, sb.toString());
+        game.drawTextScreen(10, 10,sb2.toString());
+        
+        
+        int potentialSupply = getPotentialSupply();
+
         //if shortage of supplies, build a pylon.
-        if(self.supplyUsed() >= self.supplyTotal() && !needForPylon && !isWarping(UnitType.Protoss_Pylon)) {
+        if(self.supplyUsed() >= self.supplyTotal() + potentialSupply && !isWarping(UnitType.Protoss_Pylon)) {
         	System.out.println("We need a Pylon");
-        	needForPylon = true;
+        	buildQueue.add(0, UnitType.Protoss_Pylon);
         	reservedMinerals += 100;
-        } else if(self.supplyUsed() < self.supplyTotal()) {
-        	needForPylon = false;
         }
         
         //iterate through my units
@@ -93,26 +129,57 @@ public class TestBot1 extends DefaultBWListener {
             //if it's a worker and it's idle, send it to the closest mineral patch
             if (myUnit.getType().isWorker()) {
             	if(myUnit.isIdle()) {
-            		busyProbes.remove(myUnit);
                 	gatherMineral(myUnit);
                 }
-                
-            	if(needForPylon && canAfford(UnitType.Protoss_Pylon) && !buildingPylon && !isWarping(UnitType.Protoss_Pylon)) {
+            	
+            	if(!buildQueue.isEmpty() && buildQueue.get(0).isBuilding() && canAfford(buildQueue.get(0))) {
+            		UnitType uType = buildQueue.remove(0);
             		
-            		TilePosition tp = getBuildPosition(UnitType.Protoss_Pylon, myUnit);
+            		TilePosition tp = getBuildPosition(uType, myUnit);
             		
             		if(tp != null) {
-            			buildingPylon = true;
-            			myUnit.build(UnitType.Protoss_Pylon, tp);
-            			busyProbes.add(myUnit);
-            			System.out.println("Building Pylon = true");
+            			BuildOrderBuilding buildOrder= new BuildOrderBuilding(uType, myUnit, tp);
+            			
+            			buildOrders.add(buildOrder);
+            			
+            			System.out.println("Building a "+ uType.toString());
             		}
             	}
             }
         }
     }
     
-    /**
+    private boolean isBusyProbe(Unit probe) {
+    	for(BuildOrder b : buildOrders) {
+    		if(b.getProbe() == probe) {
+    			return true;
+    		}
+    	}
+    	return false;
+    }
+    
+    private int getPotentialSupply() {
+    	int supply = 0;
+    	
+    	for(UnitType t : buildQueue) {
+    		if(t == UnitType.Protoss_Pylon) {
+    			supply += 8;
+    		} else if(t == UnitType.Protoss_Nexus) {
+    			supply += 9;
+    		}
+    	}
+    	
+    	for(BuildOrder b : buildOrders) {
+    		if(b.getType() == UnitType.Protoss_Pylon) {
+    			supply += 8;
+    		} else if(b.getType() == UnitType.Protoss_Nexus) {
+    			supply += 9;
+    		} 
+    	}
+		return supply;
+	}
+
+	/**
      * Checks if you have any incomplete units of a certain type, aka a building being warped in.
      * @param type UnitType you care about
      * @return true or false
