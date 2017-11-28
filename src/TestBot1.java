@@ -130,6 +130,7 @@ public class TestBot1 extends DefaultBWListener {
 	 * Finds a TilePosition where the given building can be build by the given probe. Also checks for pathing, padding, and pylon power.
 	 * @param building
 	 * @param probe
+	 * 
 	 * @return TilePosition where the (upper left corner of the) building can be built
 	 */
 	private TilePosition getBuildPosition(UnitType building, Unit probe) {
