@@ -1,5 +1,4 @@
 import java.util.ArrayList;
-import java.util.EventListener;
 
 import bwapi.*;
 import bwta.BWTA;
@@ -68,7 +67,6 @@ public class TestBot1 extends DefaultBWListener {
 
     @Override
     public void onFrame() {
-        //game.setTextSize(10);
         game.drawTextScreen(10, 10, "Playing as " + self.getName() + " - " + self.getRace());
         
         //if shortage of supplies, build a pylon.
@@ -87,7 +85,7 @@ public class TestBot1 extends DefaultBWListener {
         		continue;
         	}
         	
-            //if there's enough minerals, train an SCV
+            //if there's enough minerals, train a probe
             if (myUnit.getType() == UnitType.Protoss_Nexus && canAfford(UnitType.Protoss_Probe)) {
                 myUnit.train(UnitType.Protoss_Probe);
             }
@@ -114,6 +112,11 @@ public class TestBot1 extends DefaultBWListener {
         }
     }
     
+    /**
+     * Checks if you have any incomplete units of a certain type, aka a building being warped in.
+     * @param type UnitType you care about
+     * @return true or false
+     */
 	private boolean isWarping(UnitType type) {
 		for(Unit unit : self.getUnits()) {
 			if(unit.exists() && unit.getType() == type && !unit.isCompleted()) {
@@ -123,6 +126,12 @@ public class TestBot1 extends DefaultBWListener {
 		return false;
 	}
 
+	/**
+	 * Finds a TilePosition where the given building can be build by the given probe. Also checks for pathing, padding, and pylon power.
+	 * @param building
+	 * @param probe
+	 * @return TilePosition where the (upper left corner of the) building can be built
+	 */
 	private TilePosition getBuildPosition(UnitType building, Unit probe) {
 		for(int i = 3; i < 10; i++) {
 			for(int j = -i; j < i; j++) {
@@ -138,6 +147,15 @@ public class TestBot1 extends DefaultBWListener {
 		return null;
 	}
 
+	/**
+	 * Checks if a building can be build at a certain TilePosition, with a certain amount of padding around it to prevent
+	 * pathing issues
+	 * @param tpToCheck
+	 * @param range padding on all sides of the building
+	 * @param probe
+	 * @param building
+	 * @return
+	 */
 	private boolean canBuildAround(TilePosition tpToCheck, int range, Unit probe, UnitType building) {
 		for(int i = -range; i <= range; i++) {
 			for(int j = -range; j <= range; j++) {
@@ -149,11 +167,21 @@ public class TestBot1 extends DefaultBWListener {
 		return true;
 	}
 
+	/**
+	 * Checks whether or not you can afford the given UnitType while taking reserved minerals and gas into account.
+	 * Does not care about anything else.
+	 * @param type
+	 * @return
+	 */
 	private boolean canAfford(UnitType type) {
 		return type.mineralPrice() <= self.minerals() - reservedMinerals 
 				&& type.gasPrice() <= self.gas() - reservedGas;
 	}
 
+	/**
+	 * Orders this unit to gather the closest patch of minerals, if any such patch can be found.
+	 * @param myUnit
+	 */
 	private void gatherMineral(Unit myUnit) {
 		Unit closestMineral = null;
 
