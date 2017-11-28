@@ -1,3 +1,4 @@
+import java.util.ArrayList;
 import java.util.EventListener;
 
 import bwapi.*;
@@ -18,8 +19,8 @@ public class TestBot1 extends DefaultBWListener {
     private int reservedMinerals = 0;
     private int reservedGas = 0;
     
-    private TilePosition tpGlobal;
-
+    private ArrayList<Unit> busyProbes;
+    
     public void run() {
         mirror.getModule().setEventListener(this);
         mirror.startGame();
@@ -32,7 +33,7 @@ public class TestBot1 extends DefaultBWListener {
         if(unit.getType() == UnitType.Protoss_Pylon) {
         	buildingPylon = false;
         	reservedMinerals -= 100;
-        	System.out.println("Pylon build! Reserved Minerals: "+ reservedMinerals);
+        	game.sendText("buildingPylon = false! Reserved Minerals: "+ reservedMinerals);
         }
     }
     
@@ -52,6 +53,8 @@ public class TestBot1 extends DefaultBWListener {
         BWTA.analyze();
         System.out.println("Map data ready");
         
+        busyProbes = new ArrayList<>();
+        
         int i = 0;
         for(BaseLocation baseLocation : BWTA.getBaseLocations()){
         	System.out.println("Base location #" + (++i) + ". Printing location's region polygon:");
@@ -68,19 +71,22 @@ public class TestBot1 extends DefaultBWListener {
         //game.setTextSize(10);
         game.drawTextScreen(10, 10, "Playing as " + self.getName() + " - " + self.getRace());
         
-        if(tpGlobal != null) {
-        	game.drawDotMap(new Position(this.tpGlobal.getX() * 32, this.tpGlobal.getY() * 32),Color.Red);
-        }
-        
         //if shortage of supplies, build a pylon.
         if(self.supplyUsed() >= self.supplyTotal() && !needForPylon && !isWarping(UnitType.Protoss_Pylon)) {
-        	System.out.println("Planning on building a Pylon..");
+        	System.out.println("We need a Pylon");
         	needForPylon = true;
+        	reservedMinerals += 100;
+        } else if(self.supplyUsed() < self.supplyTotal()) {
+        	needForPylon = false;
         }
         
         //iterate through my units
         for (Unit myUnit : self.getUnits()) {
-
+        	
+        	if(!myUnit.exists()) {
+        		continue;
+        	}
+        	
             //if there's enough minerals, train an SCV
             if (myUnit.getType() == UnitType.Protoss_Nexus && canAfford(UnitType.Protoss_Probe)) {
                 myUnit.train(UnitType.Protoss_Probe);
@@ -88,23 +94,20 @@ public class TestBot1 extends DefaultBWListener {
 
             //if it's a worker and it's idle, send it to the closest mineral patch
             if (myUnit.getType().isWorker()) {
-                if(myUnit.isIdle()) {
+            	if(myUnit.isIdle()) {
+            		busyProbes.remove(myUnit);
                 	gatherMineral(myUnit);
                 }
                 
-            	if(needForPylon && canAfford(UnitType.Protoss_Pylon) && !buildingPylon) {
-            		buildingPylon = true;
-            		reservedMinerals += 100;
+            	if(needForPylon && canAfford(UnitType.Protoss_Pylon) && !buildingPylon && !isWarping(UnitType.Protoss_Pylon)) {
             		
             		TilePosition tp = getBuildPosition(UnitType.Protoss_Pylon, myUnit);
             		
-            		if(tp == null) {
-            			buildingPylon = false;
-            			reservedMinerals -= 100;
-            		} else {
+            		if(tp != null) {
+            			buildingPylon = true;
             			myUnit.build(UnitType.Protoss_Pylon, tp);
-            			game.sendText("Building Pylon");
-            			tpGlobal = tp;
+            			busyProbes.add(myUnit);
+            			System.out.println("Building Pylon = true");
             		}
             	}
             }
@@ -121,12 +124,13 @@ public class TestBot1 extends DefaultBWListener {
 	}
 
 	private TilePosition getBuildPosition(UnitType building, Unit probe) {
-		for(int i = 1; i < 10; i++) {
+		for(int i = 3; i < 10; i++) {
 			for(int j = -i; j < i; j++) {
 				for(int k = -i; k < i; k++) {
-				
-					if(canBuild(building, probe, j, k)) {
-						return new TilePosition(probe.getTilePosition().getX()+j, probe.getTilePosition().getY()+k);
+					TilePosition tpToCheck = new TilePosition(probe.getTilePosition().getX()+j, probe.getTilePosition().getY()+k);
+					
+					if(canBuildAround(tpToCheck, 1, probe, building)) {
+						return tpToCheck;
 					}
 				}
 			}
@@ -134,26 +138,15 @@ public class TestBot1 extends DefaultBWListener {
 		return null;
 	}
 
-	private boolean canBuild(UnitType building, Unit probe, int j, int k) {
-		TilePosition tp = new TilePosition(probe.getTilePosition().getX()+j,probe.getTilePosition().getY()+k);
-		
-		if(game.canBuildHere(tp, building, probe)) {
-			for(Unit unit : game.getAllUnits()) {
-				
-				for(int width = 0; width < building.width(); width++) {
-					for(int height = 0; height < building.height(); height++) {
-						
-						TilePosition newTP = new TilePosition(tp.getX()+width, tp.getY()+height);
-						
-						if(unit.getTilePosition().equals(newTP)) {
-							return false;
-						}
-					}
+	private boolean canBuildAround(TilePosition tpToCheck, int range, Unit probe, UnitType building) {
+		for(int i = -range; i <= range; i++) {
+			for(int j = -range; j <= range; j++) {
+				if(!game.canBuildHere(new TilePosition(tpToCheck.getX()+i,tpToCheck.getY()+j), building, probe)) {
+					return false;
 				}
 			}
-			return true;
 		}
-		return false;
+		return true;
 	}
 
 	private boolean canAfford(UnitType type) {
