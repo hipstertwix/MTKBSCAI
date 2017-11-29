@@ -7,19 +7,18 @@ import bwta.BWTA;
 import bwta.BaseLocation;
 
 public class TestBot1 extends DefaultBWListener {
+	
+	private final boolean CHEAT = false;
 
     private Mirror mirror = new Mirror();
-
     private Game game;
-
     private Player self;
     
     private ArrayList<UnitType> buildQueue;
+    private ArrayList<BuildingOrder> buildingOrders;
     
     private int reservedMinerals = 0;
-    private int reservedGas = 0;
-    
-    private ArrayList<BuildOrder> buildOrders;
+    private int reservedGas = 0;    
     
     public void run() {
         mirror.getModule().setEventListener(this);
@@ -31,13 +30,16 @@ public class TestBot1 extends DefaultBWListener {
         System.out.println("New unit created: " + unit.getType());
         
         if(unit.getType().isBuilding() && unit.getPlayer() == self) {
+        	System.out.println("we got a new building: " + unit + "@" + unit.getTilePosition().getX() + "," + unit.getTilePosition().getY());
         	reservedMinerals -= unit.getType().mineralPrice();
         	reservedGas -= unit.getType().gasPrice();
         	
-        	for(BuildOrder b : buildOrders) {
-        		if(b instanceof BuildOrderBuilding) {
-        			((BuildOrderBuilding) b).startedWarp(unit);
+        	for(BuildingOrder b : buildingOrders) {
+        		if(b.checkBuildingMatch(unit)) {
+        			b.startedWarp(unit);
         			break;
+        		} else {
+        			System.out.println("this building did not match " + b);
         		}
         	}
         }
@@ -49,8 +51,10 @@ public class TestBot1 extends DefaultBWListener {
         game = mirror.getGame();
         self = game.self();
         
-        game.sendText("black sheep wall");
-        game.sendText("operation cwal");
+        if(CHEAT) {
+	        game.sendText("black sheep wall");
+	        game.sendText("operation cwal");
+        }
 
         //Use BWTA to analyze map
         //This may take a few minutes if the map is processed first time!
@@ -60,7 +64,7 @@ public class TestBot1 extends DefaultBWListener {
         System.out.println("Map data ready");
         
         buildQueue = new ArrayList<>();
-        buildOrders = new ArrayList<>();
+        buildingOrders = new ArrayList<>();
         
         int i = 0;
         for(BaseLocation baseLocation : BWTA.getBaseLocations()){
@@ -75,24 +79,24 @@ public class TestBot1 extends DefaultBWListener {
     @Override
     public void onFrame() {
         
-        ArrayList<BuildOrder> toRemove = new ArrayList<>();
+        ArrayList<BuildingOrder> toRemove = new ArrayList<>();
         
-        for(BuildOrder b : buildOrders) {
+        for(BuildingOrder b : buildingOrders) {
         	if(b.isDone()) {
         		toRemove.add(b);
         	}
         }
         
-        for(BuildOrder b : toRemove) {
-        	buildOrders.remove(b);
+        for(BuildingOrder b : toRemove) {
+        	buildingOrders.remove(b);
         }
         
-        for(BuildOrder b : buildOrders) {
+        for(BuildingOrder b : buildingOrders) {
         	b.onFrame();
         }
         
         StringBuilder sb = new StringBuilder("BuildOrders: \n");
-        for(BuildOrder b : buildOrders) {
+        for(BuildingOrder b : buildingOrders) {
         	sb.append(b.toString()+"\n");
         }
         
@@ -138,9 +142,9 @@ public class TestBot1 extends DefaultBWListener {
             		TilePosition tp = getBuildPosition(uType, myUnit);
             		
             		if(tp != null) {
-            			BuildOrderBuilding buildOrder= new BuildOrderBuilding(uType, myUnit, tp);
+            			BuildingOrder buildOrder= new BuildingOrder(uType, myUnit, tp);
             			
-            			buildOrders.add(buildOrder);
+            			buildingOrders.add(buildOrder);
             			
             			System.out.println("Building a "+ uType.toString());
             		}
@@ -149,8 +153,14 @@ public class TestBot1 extends DefaultBWListener {
         }
     }
     
+    /**
+     * Checks whether or not the given unit is a busy, which for now only means it is in the process of 
+     * warping in a building
+     * @param probe
+     * @return
+     */
     private boolean isBusyProbe(Unit probe) {
-    	for(BuildOrder b : buildOrders) {
+    	for(BuildingOrder b : buildingOrders) {
     		if(b.getProbe() == probe) {
     			return true;
     		}
@@ -158,6 +168,11 @@ public class TestBot1 extends DefaultBWListener {
     	return false;
     }
     
+    /**
+     * Gets all the supply provided by buildings that are either in the BuildQueue or that are in the process
+     * of being built
+     * @return
+     */
     private int getPotentialSupply() {
     	int supply = 0;
     	
@@ -169,7 +184,7 @@ public class TestBot1 extends DefaultBWListener {
     		}
     	}
     	
-    	for(BuildOrder b : buildOrders) {
+    	for(BuildingOrder b : buildingOrders) {
     		if(b.getType() == UnitType.Protoss_Pylon) {
     			supply += 8;
     		} else if(b.getType() == UnitType.Protoss_Nexus) {
