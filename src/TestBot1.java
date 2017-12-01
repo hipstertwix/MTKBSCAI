@@ -25,12 +25,7 @@ public class TestBot1 extends DefaultBWListener {
         mirror.startGame();
     }
 
-    /*
-     * TEST COM
-     * 
-     */
-    
-    
+
     @Override
     public void onUnitCreate(Unit unit) {
         System.out.println("New unit created: " + unit.getType());
