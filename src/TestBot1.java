@@ -26,7 +26,8 @@ public class TestBot1 extends DefaultBWListener {
     }
 
     /*
-     * TEST COMMENT VOOR EG
+     * TEST COMMENT VOOR 
+     * 
      */
     
     
