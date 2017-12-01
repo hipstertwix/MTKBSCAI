@@ -26,7 +26,7 @@ public class TestBot1 extends DefaultBWListener {
     }
 
     /*
-     * TEST COMM
+     * TEST COM
      * 
      */
     
