@@ -1,26 +1,27 @@
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Deque;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Random;
 
 import bwapi.*;
-import bwapi.UnitType.*;
 import bwta.BWTA;
 import bwta.BaseLocation;
 
 public class TestBot1 extends DefaultBWListener {
 	
+	private static final int NEXUS_RESOURCE_RADIUS = 320;
+
 	private final boolean CHEAT = false;
 
     private Mirror mirror = new Mirror();
     private Game game;
     private Player self;
+    private Random random;
     
     private ArrayList<UnitType> buildQueue;
     private ArrayList<BuildingOrder> buildingOrders;
     
-    private int reservedMinerals = 400;
+    private int reservedMinerals = 400; // starting nexus
     private int reservedGas = 0;
     
     private HashMap<Unit, ArrayList<Unit>> nexusProbes;
@@ -31,9 +32,6 @@ public class TestBot1 extends DefaultBWListener {
         mirror.getModule().setEventListener(this);
         mirror.startGame();
     }
-    
-    // je moeder
-
 
     @Override
     public void onUnitCreate(Unit unit) {
@@ -63,13 +61,15 @@ public class TestBot1 extends DefaultBWListener {
     public void onStart() {
         game = mirror.getGame();
         self = game.self();
+        random = new Random();
         
         nexusProbes = new HashMap<>();
         probeNexusWaitTime = new HashMap<>();
 
         if(CHEAT) {
-	        game.sendText("black sheep wall");
-	        game.sendText("operation cwal");
+        	game.enableFlag(1); // enables player input
+	        game.sendText("black sheep wall"); // enables full vision
+	        game.sendText("operation cwal"); // increases build/train speed 
         }
 
         //Use BWTA to analyze map
@@ -80,10 +80,6 @@ public class TestBot1 extends DefaultBWListener {
         System.out.println("Map data ready");
         
         buildQueue = new ArrayList<>();
-        buildQueue.add(UnitType.Protoss_Gateway);
-        buildQueue.add(UnitType.Protoss_Gateway);
-        buildQueue.add(UnitType.Protoss_Gateway);
-        buildQueue.add(UnitType.Protoss_Gateway);
         buildingOrders = new ArrayList<>();
         
         int i = 0;
@@ -135,6 +131,10 @@ public class TestBot1 extends DefaultBWListener {
         		continue;
         	}
         	
+        	if(!unit.isCompleted()) {
+        		continue;
+        	}
+        	
         	switch(unit.getType().toString()) { 
         	case "Protoss_Nexus":
         		break;
@@ -153,39 +153,50 @@ public class TestBot1 extends DefaultBWListener {
     }
 
 
-	private void onFrameProbe(Unit unit) {
-		if(unit.getType() != UnitType.Protoss_Probe) {
-			System.out.println("1");
+	private void onFrameProbe(Unit probe) {
+		if(probe.getType() != UnitType.Protoss_Probe) {
 			return;
 		}
-		System.out.println("2");
-		if(unit.isIdle() && !hasTask(unit)) {
-			System.out.println("3");
-			if(probeNexusWaitTime.getOrDefault(unit, 1) <= 0) {
-				System.out.println("34");
-				probeNexusWaitTime.remove(unit);
-				System.out.println("646");
+		
+		// assign to nexus if needed
+		if(probe.isIdle() && getNexusFromProbe(probe) == null) {
+			if(probeNexusWaitTime.getOrDefault(probe, 1) <= 0) {
+				probeNexusWaitTime.remove(probe);
 			}
 			
-			if(probeNexusWaitTime.getOrDefault(unit, null) == null) {
-				System.out.println("4");
+			if(probeNexusWaitTime.getOrDefault(probe, null) == null) {
 				
-				if(!findNexus(unit)) {
-					probeNexusWaitTime.put(unit, 100);
+				if(!findNexus(probe)) {
+					System.out.println("could not find nexus for probe");
+					probeNexusWaitTime.put(probe, 100);
 				}
 			} else {
-				System.out.println("12222");
-				probeNexusWaitTime.put(unit, probeNexusWaitTime.get(unit)-1);
+				probeNexusWaitTime.put(probe, probeNexusWaitTime.get(probe)-1);
+			}
+		} 
+		
+		if(probe.isIdle()) {
+			Unit nexus = getNexusFromProbe(probe);
+			if(nexus != null) {
+				// need to make probe work for nexus
+				List<Unit> units = nexus.getUnitsInRadius(NEXUS_RESOURCE_RADIUS);
+				List<Unit> minerals = new ArrayList<>();
+				for(Unit unit : units) {
+					if(unit.getType().isMineralField()) {
+						minerals.add(unit);
+					}
+				}
+				probe.gather(minerals.get(random.nextInt(minerals.size())));
 			}
 		}
-
+		
 		if(!buildQueue.isEmpty() && buildQueue.get(0).isBuilding() && canAfford(buildQueue.get(0))) {
 			UnitType uType = buildQueue.remove(0);
 
-			TilePosition tp = getBuildPosition(uType, unit);
+			TilePosition tp = getBuildPosition(uType, probe);
 
 			if(tp != null) {
-				BuildingOrder buildOrder= new BuildingOrder(uType, unit, tp);
+				BuildingOrder buildOrder= new BuildingOrder(uType, probe, tp);
 
 				buildingOrders.add(buildOrder);
 
@@ -227,28 +238,34 @@ public class TestBot1 extends DefaultBWListener {
 		return false;
 	}
 	
-	private int getNexusDesiredProbes(Unit nexus) {
-		System.out.println(nexus.getUnitsInRadius(300).toString());
-		return 1;
+	private int getNexusDesiredProbes(Unit nexus) {;
+		int desiredProbes = 0;		
+			
+		for(Unit unit : nexus.getUnitsInRadius(NEXUS_RESOURCE_RADIUS)) {
+			UnitType type = unit.getType();
+			if(type.isMineralField() || type == UnitType.Protoss_Assimilator) {
+				desiredProbes += 3;
+			}
+		}
+		return desiredProbes;
 	}
 
 
 	/**
-	 * Returns true if a probe is assigned a task.
+	 * Gets the Nexus the given Probe is assigned to, or null if it does not have a Nexus assigned
 	 * @param probe
 	 * @return
 	 */
-	private boolean hasTask(Unit probe) {
+	private Unit getNexusFromProbe(Unit probe) {
 		if(probe.getType() != UnitType.Protoss_Probe) {
 			throw new IllegalArgumentException("Unit "+ probe.getType()+" is not a probe.");
 		}
-		
-		for(List<Unit> uList : nexusProbes.values()) {
-			if(uList.contains(probe)) {
-				return true;
+		for(Unit nexus : nexusProbes.keySet()) {
+			if(nexusProbes.get(nexus).contains(probe)) {
+				return nexus;
 			}
 		}
-		return false;
+		return null;
 	}
 
 
@@ -264,13 +281,18 @@ public class TestBot1 extends DefaultBWListener {
         }
         
         StringBuilder rMaG = new StringBuilder("Reserved Minerals: "+reservedMinerals+"\n"
-        		+ "Reserved Gas: "+reservedGas);
-        
-        
+        		+ "Reserved Gas: "+reservedGas);   
         
         game.drawTextScreen(150, 10, bO.toString());
         game.drawTextScreen(10, 10,bQ.toString());
         game.drawTextScreen(290, 10,rMaG.toString());
+        
+        for(Unit nexus : nexusProbes.keySet()) {
+        	int probes = nexusProbes.get(nexus).size();
+        	int want = getNexusDesiredProbes(nexus);
+        	String nexusString = String.format("%d/%d", probes, want);
+        	game.drawText(bwapi.CoordinateType.Enum.Map, nexus.getX(), nexus.getY(), nexusString);
+        }
 	}
     
     /**
