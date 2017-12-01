@@ -1,8 +1,11 @@
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.List;
 
 import bwapi.*;
+import bwapi.UnitType.*;
 import bwta.BWTA;
 import bwta.BaseLocation;
 
@@ -17,8 +20,12 @@ public class TestBot1 extends DefaultBWListener {
     private ArrayList<UnitType> buildQueue;
     private ArrayList<BuildingOrder> buildingOrders;
     
-    private int reservedMinerals = 0;
-    private int reservedGas = 0;    
+    private int reservedMinerals = 400;
+    private int reservedGas = 0;
+    
+    private HashMap<Unit, ArrayList<Unit>> nexusProbes;
+    private HashMap<Unit, Integer> probeNexusWaitTime;
+    
     
     public void run() {
         mirror.getModule().setEventListener(this);
@@ -27,12 +34,12 @@ public class TestBot1 extends DefaultBWListener {
     
     // je moeder
 
+
     @Override
     public void onUnitCreate(Unit unit) {
-        System.out.println("New unit created: " + unit.getType());
         
         if(unit.getType().isBuilding() && unit.getPlayer() == self) {
-        	System.out.println("we got a new building: " + unit + "@" + unit.getTilePosition().getX() + "," + unit.getTilePosition().getY());
+        	System.out.println("we got a new building: " + unit.toString() + "@" + unit.getTilePosition().getX() + "," + unit.getTilePosition().getY());
         	reservedMinerals -= unit.getType().mineralPrice();
         	reservedGas -= unit.getType().gasPrice();
         	
@@ -44,6 +51,10 @@ public class TestBot1 extends DefaultBWListener {
         			System.out.println("this building did not match " + b);
         		}
         	}
+        	
+        	if(unit.getType() == UnitType.Protoss_Nexus) {
+        		nexusProbes.put(unit, new ArrayList<Unit>());
+        	}
         }
     }
     
@@ -53,6 +64,9 @@ public class TestBot1 extends DefaultBWListener {
         game = mirror.getGame();
         self = game.self();
         
+        nexusProbes = new HashMap<>();
+        probeNexusWaitTime = new HashMap<>();
+
         if(CHEAT) {
 	        game.sendText("black sheep wall");
 	        game.sendText("operation cwal");
@@ -101,18 +115,8 @@ public class TestBot1 extends DefaultBWListener {
         	b.onFrame();
         }
         
-        StringBuilder sb = new StringBuilder("BuildOrders: \n");
-        for(BuildingOrder b : buildingOrders) {
-        	sb.append(b.toString()+"\n");
-        }
-        
-        StringBuilder sb2 = new StringBuilder("BuildQueue: \n");
-        for(UnitType uType : buildQueue) {
-        	sb2.append(uType.toString()+"\n");
-        }
-        
-        game.drawTextScreen(150, 10, sb.toString());
-        game.drawTextScreen(10, 10,sb2.toString());
+        //draw the onScreen text displays
+        onFrameDraw();
         
         
         int potentialSupply = getPotentialSupply();
@@ -125,39 +129,149 @@ public class TestBot1 extends DefaultBWListener {
         }
         
         //iterate through my units
-        for (Unit myUnit : self.getUnits()) {
+        for (Unit unit : self.getUnits()) {
         	
-        	if(!myUnit.exists()) {
+        	if(!unit.exists()) {
         		continue;
         	}
         	
+        	switch(unit.getType().toString()) { 
+        	case "Protoss_Nexus":
+        		break;
+        	case "Protoss_Probe":
+                //if it's a worker and it's idle, send it to the closest mineral patch
+                onFrameProbe(unit);
+        		break;
+        	default: continue;
+        	}
+        	
             //if there's enough minerals, train a probe
-            if (myUnit.getType() == UnitType.Protoss_Nexus && canAfford(UnitType.Protoss_Probe)) {
-                myUnit.train(UnitType.Protoss_Probe);
-            }
-
-            //if it's a worker and it's idle, send it to the closest mineral patch
-            if (myUnit.getType().isWorker()) {
-            	if(myUnit.isIdle()) {
-                	gatherMineral(myUnit);
-                }
-            	
-            	if(!buildQueue.isEmpty() && buildQueue.get(0).isBuilding() && canAfford(buildQueue.get(0))) {
-            		UnitType uType = buildQueue.remove(0);
-            		
-            		TilePosition tp = getBuildPosition(uType, myUnit);
-            		
-            		if(tp != null) {
-            			BuildingOrder buildOrder= new BuildingOrder(uType, myUnit, tp);
-            			
-            			buildingOrders.add(buildOrder);
-            			
-            			System.out.println("Building a "+ uType.toString());
-            		}
-            	}
+            if (unit.getType() == UnitType.Protoss_Nexus && canAfford(UnitType.Protoss_Probe)) {
+                unit.train(UnitType.Protoss_Probe);
             }
         }
     }
+
+
+	private void onFrameProbe(Unit unit) {
+		if(unit.getType() != UnitType.Protoss_Probe) {
+			System.out.println("1");
+			return;
+		}
+		System.out.println("2");
+		if(unit.isIdle() && !hasTask(unit)) {
+			System.out.println("3");
+			if(probeNexusWaitTime.getOrDefault(unit, 1) <= 0) {
+				System.out.println("34");
+				probeNexusWaitTime.remove(unit);
+				System.out.println("646");
+			}
+			
+			if(probeNexusWaitTime.getOrDefault(unit, null) == null) {
+				System.out.println("4");
+				
+				if(!findNexus(unit)) {
+					probeNexusWaitTime.put(unit, 100);
+				}
+			} else {
+				System.out.println("12222");
+				probeNexusWaitTime.put(unit, probeNexusWaitTime.get(unit)-1);
+			}
+		}
+
+		if(!buildQueue.isEmpty() && buildQueue.get(0).isBuilding() && canAfford(buildQueue.get(0))) {
+			UnitType uType = buildQueue.remove(0);
+
+			TilePosition tp = getBuildPosition(uType, unit);
+
+			if(tp != null) {
+				BuildingOrder buildOrder= new BuildingOrder(uType, unit, tp);
+
+				buildingOrders.add(buildOrder);
+
+				System.out.println("Building a "+ uType.toString());
+			}
+		}
+	}
+
+	private boolean findNexus(Unit probe) {
+		if(probe.getType() != UnitType.Protoss_Probe) {
+			throw new IllegalArgumentException("Unit "+ probe.getType()+" is not a probe.");
+		}
+		
+		ArrayList<Unit> nexusList = new ArrayList<>();
+		
+		for(Unit u : nexusProbes.keySet()) {
+			if(nexusList.isEmpty()) {
+				nexusList.add(u);
+			} else {
+				for(int i = 0; i < nexusList.size(); i++) {
+					if(u.getDistance(probe) <= nexusList.get(i).getDistance(probe)) {
+						nexusList.add(i, u);
+						break;
+					}
+					
+					if(i == nexusList.size()-1) {
+						nexusList.add(u);
+					}
+				}
+			}
+		}
+		
+		for(Unit nexus : nexusList) {
+			if(nexusProbes.get(nexus).size() < getNexusDesiredProbes(nexus)) {
+				nexusProbes.get(nexus).add(probe);
+				return true;
+			}
+		}
+		return false;
+	}
+	
+	private int getNexusDesiredProbes(Unit nexus) {
+		System.out.println(nexus.getUnitsInRadius(300).toString());
+		return 1;
+	}
+
+
+	/**
+	 * Returns true if a probe is assigned a task.
+	 * @param probe
+	 * @return
+	 */
+	private boolean hasTask(Unit probe) {
+		if(probe.getType() != UnitType.Protoss_Probe) {
+			throw new IllegalArgumentException("Unit "+ probe.getType()+" is not a probe.");
+		}
+		
+		for(List<Unit> uList : nexusProbes.values()) {
+			if(uList.contains(probe)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+
+	private void onFrameDraw() {
+		StringBuilder bO = new StringBuilder("BuildOrders: \n");
+        for(BuildingOrder b : buildingOrders) {
+        	bO.append(b.toString()+"\n");
+        }
+        
+        StringBuilder bQ = new StringBuilder("BuildQueue: \n");
+        for(UnitType uType : buildQueue) {
+        	bQ.append(uType.toString()+"\n");
+        }
+        
+        StringBuilder rMaG = new StringBuilder("Reserved Minerals: "+reservedMinerals+"\n"
+        		+ "Reserved Gas: "+reservedGas);
+        
+        
+        
+        game.drawTextScreen(150, 10, bO.toString());
+        game.drawTextScreen(10, 10,bQ.toString());
+        game.drawTextScreen(290, 10,rMaG.toString());
+	}
     
     /**
      * Checks whether or not the given unit is a busy, which for now only means it is in the process of 
