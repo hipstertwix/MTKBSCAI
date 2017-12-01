@@ -24,6 +24,8 @@ public class TestBot1 extends DefaultBWListener {
         mirror.getModule().setEventListener(this);
         mirror.startGame();
     }
+    
+    // je moeder
 
     @Override
     public void onUnitCreate(Unit unit) {
@@ -64,6 +66,10 @@ public class TestBot1 extends DefaultBWListener {
         System.out.println("Map data ready");
         
         buildQueue = new ArrayList<>();
+        buildQueue.add(UnitType.Protoss_Gateway);
+        buildQueue.add(UnitType.Protoss_Gateway);
+        buildQueue.add(UnitType.Protoss_Gateway);
+        buildQueue.add(UnitType.Protoss_Gateway);
         buildingOrders = new ArrayList<>();
         
         int i = 0;
