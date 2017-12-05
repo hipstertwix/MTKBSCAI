@@ -22,8 +22,8 @@ public class TestBot1 extends DefaultBWListener {
     private ArrayList<UnitType> buildQueue;
     private ArrayList<BuildingOrder> buildingOrders;
     
-    private int reservedMinerals = 0;
-    private int reservedGas = 0;
+    private int reservedMinerals;
+    private int reservedGas;
     
     private HashMap<Unit, ArrayList<Unit>> nexusProbes;
     private HashMap<Unit, Integer> probeNexusWaitTime;
@@ -64,8 +64,8 @@ public class TestBot1 extends DefaultBWListener {
         self = game.self();
         random = new Random();
         
-        reservedMinerals = 0;
-        reservedGas = 0;
+        reservedMinerals = UnitType.Protoss_Nexus.mineralPrice();
+        reservedGas = UnitType.Protoss_Nexus.gasPrice();
         
         nexusProbes = new HashMap<>();
         probeNexusWaitTime = new HashMap<>();
