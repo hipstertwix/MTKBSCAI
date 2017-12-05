@@ -1,3 +1,4 @@
+package mtkbscai;
 import bwapi.*;
 
 public class BuildingOrder {
